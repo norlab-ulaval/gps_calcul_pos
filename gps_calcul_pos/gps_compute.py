@@ -70,7 +70,7 @@ class Gps_compute(Node):
             self.tf_acquired = True
             self.destroy_subscription(self.tf_sub)
     
-    def compute_calibration(self, P):
+    def compute_calibration(self, position):
         # while self.tf_acquired == False:
         #     self.get_logger().info("Waiting for tf transform...")
         #     time.sleep(0.5)
