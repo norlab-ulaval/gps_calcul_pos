@@ -10,6 +10,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config', ['config/gps_compute.yaml']),
+        ('share/' + package_name + '/launch', ['launch/gps_compute.launch.py']),
     ],
     install_requires=['setuptools', 'pyproj', 'numpy'],
     zip_safe=True,
@@ -19,7 +21,8 @@ setup(
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': ['gps_compute = gps_calcul_pos.gps_compute:main',
+        'console_scripts': [
+            'gps_compute = gps_calcul_pos.gps_compute:main',
         ],
     },
 )

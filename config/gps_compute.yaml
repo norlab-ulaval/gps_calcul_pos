@@ -1,0 +1,4 @@
+gps_compute_node:
+  ros__parameters:
+      input_topic: "/gps_value"
+      output_topic: "/warthog_gps_pose"
