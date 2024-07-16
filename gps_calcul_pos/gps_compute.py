@@ -5,6 +5,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from pyproj import Transformer
 from rclpy.node import Node
+from rclpy.qos import qos_profile_action_status_default
 from std_msgs.msg import Float32MultiArray
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster
@@ -48,7 +49,8 @@ class Gps_compute(Node):
             TFMessage,
             "/tf_static",
             self.tf_callback,
-            10
+            qos_profile_action_status_default
+
         )
         self.Q1, self.Q2, self.Q3 = None, None, None
         self.tf_acquired = False
