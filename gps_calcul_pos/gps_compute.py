@@ -46,7 +46,7 @@ class Gps_compute(Node):
             10)
         tf_sub = self.create_subscription(
             TFMessage,
-            "/tf",
+            "/tf_static",
             self.tf_callback,
             10
         )
@@ -129,7 +129,7 @@ class Gps_compute(Node):
         Q = np.array([self.Q1, self.Q2, self.Q3]).T
         Q = np.vstack((Q, np.ones((1, Q.shape[1]))))  
         
-        Q = np.array([[2.980048, -0.249529, -0.680838], [3.753882, -0.211299, -0.584590], [3.611486,  0.286080, -0.561145], [1,1,1]]) #Q est une matrice qui provient de valeur mesure au lab 
+        #Q = np.array([[2.980048, -0.249529, -0.680838], [3.753882, -0.211299, -0.584590], [3.611486,  0.286080, -0.561145], [1,1,1]]) #Q est une matrice qui provient de valeur mesure au lab 
         P = np.vstack((P, np.ones((1, P.shape[1]))))#P est une matrice qui provient de valeur mesuré par le robot 
         if P is not None and Q is not None:
             self.T_world_to_base_link = self.minimization(P, Q)
