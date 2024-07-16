@@ -8,6 +8,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster
+from gpsx.msg import Gpsx
 
 
 class Gps_compute(Node):
@@ -15,12 +16,29 @@ class Gps_compute(Node):
         super().__init__('gps_compute')
         input_topic = self.declare_parameter('input_topic', '/gps_value').value
         output_topic = self.declare_parameter('output_topic', '/warthog_gps_pose').value
-        self.subscription = self.create_subscription(
-            Float32MultiArray,
-            input_topic,
-            self.listener_callback,
+
+        self.subscription1 = self.create_subscription(
+            Gpsx,
+            "topic_emlid_E845",
+            self.emlid_E845_callback,
             10)
-        self.subscription  # prevent unused variable warning
+
+        self.subscription2 = self.create_subscription(
+            Gpsx,
+            "topic_emlid_6802",
+            self.emlid_6802_callback,
+            10)
+
+        self.subscription3 = self.create_subscription(
+            Gpsx,
+            "topic_emlid_C959",
+            self.emlid_C959_callback,
+            10)
+
+        self.subscription1  # prevent unused variable warning
+        self.subscription2  # prevent unused variable warning
+        self.subscription3  # prevent unused variable warning
+
         self.tf_broadcaster = TransformBroadcaster(self)
         self.publisher = self.create_publisher(
             PoseStamped,
@@ -34,8 +52,18 @@ class Gps_compute(Node):
         )
         self.Q1, self.Q2, self.Q3 = None, None, None
         self.tf_acquired = False
+        self.timer = self.create_timer(0.2, self.timer_callback)
 
-    def listener_callback(self, msg):
+    def emlid_E845_callback(self,msg):
+        self.emlid_E845 = msg
+
+    def emlid_6802_callback(self,msg):
+        self.emlid_6802 = msg
+
+    def emlid_C959_callback(self,msg):
+        self.emlid_C959 = msg
+
+    def timer_callback(self):
         #convertion2949 = Transformer.from_crs("EPSG:4326", "EPSG:2949", always_xy=True)
         # x[0], y[0] = convertion2949.transform(gps_values[0], gps_values[1])
         # x[1], y[1] = convertion2949.transform(gps_values[3], gps_values[4])
@@ -43,16 +71,24 @@ class Gps_compute(Node):
         self.pose = PoseStamped()
         self.pose.header.frame_id = 'world'
         
+
         #TODO: find a way to get the timestamp from the gps message
         # self.pose.header.stamp.sec = msg.header.stamp.sec
         # self.pose.header.stamp.nanosec = msg.header.stamp.nanosec
-        
-        gps_values = list(msg.data)
+
         x = [0, 0, 0]
         y = [0, 0, 0]
         z = [0, 0, 0]
         convertion2955 = Transformer.from_crs("EPSG:4326", "EPSG:2955", always_xy=True)
-        if gps_values is not None:
+
+        try:
+            gps_emlid = [self.emlid_E845, self.emlid_6802, self.emlid_C959] 
+            gps_values = []
+            for i in gps_emlid:
+                gps_values.append(i.longitude)
+                gps_values.append(i.latitude)
+                gps_values.append(i.altitude)
+            
             for i in range(3):
                 x[i], y[i], z[i] = convertion2955.transform(gps_values[i*3], gps_values[i*3+1], gps_values[i*3+2])
             position = np.array([x, y, z])
@@ -62,7 +98,15 @@ class Gps_compute(Node):
             self.publish_transform(self.T_world_to_base_link)
             self.publish_pose(self.T_world_to_base_link)
             # self.get_logger().info(f"Transofrmation matrix: {self.T_world_to_base_link}")
-            
+
+            self.get_logger().info("Publishing calibration transform...")
+            self.publish_transform(self.T_world_to_base_link)
+
+        except:
+            self.get_logger().info('-------------------')
+            self.get_logger().info('no info from a gps')
+            self.get_logger().info('-------------------')
+
     def tf_callback(self, tf_msg):
         for tf in tf_msg.transforms:
             if tf.child_frame_id == "EmlidE845" and tf.header.frame_id == "base_link":
@@ -79,12 +123,11 @@ class Gps_compute(Node):
             self.destroy_subscription(self.tf_sub)
     
     def compute_calibration(self, P):
-        #TODO : uncomment those lines when Q is in URDF
-        # while self.tf_acquired == False:
-        #     self.get_logger().info("Waiting for tf transform...")
-        #     time.sleep(0.5)
-        # Q = np.array([self.Q1, self.Q2, self.Q3]).T
-        # Q = np.vstack((Q, np.ones((1, Q.shape[1])))) 
+        while self.tf_acquired == False:
+            self.get_logger().info("Waiting for tf transform...")
+            time.sleep(0.5)
+        Q = np.array([self.Q1, self.Q2, self.Q3]).T
+        Q = np.vstack((Q, np.ones((1, Q.shape[1]))))  
         
         Q = np.array([[2.980048, -0.249529, -0.680838], [3.753882, -0.211299, -0.584590], [3.611486,  0.286080, -0.561145], [1,1,1]]) #Q est une matrice qui provient de valeur mesure au lab 
         P = np.vstack((P, np.ones((1, P.shape[1]))))#P est une matrice qui provient de valeur mesuré par le robot 
@@ -134,9 +177,6 @@ class Gps_compute(Node):
         t.transform.rotation.w = q[0]
         self.tf_broadcaster.sendTransform(t)
     
-    def timer_callback(self):
-        self.get_logger().info("Publishing calibration transform...")
-        self.publish_transform(self.T_world_to_base_link)
     
     def publish_pose(self, T):
         position = T[0:3, 3]
