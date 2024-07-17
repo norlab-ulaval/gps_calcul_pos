@@ -35,35 +35,40 @@ class Gps_compute(Node):
             "topic_emlid_C959",
             self.emlid_C959_callback,
             10)
-
-        self.subscription1  # prevent unused variable warning
-        self.subscription2  # prevent unused variable warning
-        self.subscription3  # prevent unused variable warning
-
-        self.tf_broadcaster = TransformBroadcaster(self)
+        
         self.publisher = self.create_publisher(
             PoseStamped,
             output_topic,
             10)
-        tf_sub = self.create_subscription(
+
+        self.tf_sub = self.create_subscription(
             TFMessage,
             "/tf_static",
             self.tf_callback,
             qos_profile_action_status_default
 
         )
+        self.subscription1  # prevent unused variable warning
+        self.subscription2  # prevent unused variable warning
+        self.subscription3  # prevent unused variable warning
+
+
+        self.tf_broadcaster = TransformBroadcaster(self)
         self.Q1, self.Q2, self.Q3 = None, None, None
         self.tf_acquired = False
-        self.timer = self.create_timer(0.2, self.timer_callback)
+        self.timer = self.create_timer(2, self.timer_callback)
 
     def emlid_E845_callback(self,msg):
         self.emlid_E845 = msg
+        self.get_logger().info("E845 working-------------------------------------------")
 
     def emlid_6802_callback(self,msg):
         self.emlid_6802 = msg
+        self.get_logger().info("6802 working-------------------------------------------")
 
     def emlid_C959_callback(self,msg):
         self.emlid_C959 = msg
+        self.get_logger().info("C959 working-------------------------------------------")
 
     def timer_callback(self):
         #convertion2949 = Transformer.from_crs("EPSG:4326", "EPSG:2949", always_xy=True)
@@ -82,44 +87,43 @@ class Gps_compute(Node):
         y = [0, 0, 0]
         z = [0, 0, 0]
         convertion2955 = Transformer.from_crs("EPSG:4326", "EPSG:2955", always_xy=True)
+        #try:
+        gps_emlid = [self.emlid_E845, self.emlid_6802, self.emlid_C959] 
+        gps_values = []
+        for i in gps_emlid:
+            gps_values.append(i.longitude)
+            gps_values.append(i.latitude)
+            gps_values.append(i.altitude)
+        
+        for i in range(3):
+            x[i], y[i], z[i] = convertion2955.transform(gps_values[i*3], gps_values[i*3+1], gps_values[i*3+2])
+        position = np.array([x, y, z])
+        self.get_logger().info(f"Received GPS values: {position}")
+        self.compute_calibration(position)
+        # self.get_logger().info(f"Calibration computed!")
+        self.publish_transform(self.T_world_to_base_link)
+        self.publish_pose(self.T_world_to_base_link)
+        # self.get_logger().info(f"Transofrmation matrix: {self.T_world_to_base_link}")
 
-        try:
-            gps_emlid = [self.emlid_E845, self.emlid_6802, self.emlid_C959] 
-            gps_values = []
-            for i in gps_emlid:
-                gps_values.append(i.longitude)
-                gps_values.append(i.latitude)
-                gps_values.append(i.altitude)
-            
-            for i in range(3):
-                x[i], y[i], z[i] = convertion2955.transform(gps_values[i*3], gps_values[i*3+1], gps_values[i*3+2])
-            position = np.array([x, y, z])
-            # self.get_logger().info(f"Received GPS values: {position}")
-            self.compute_calibration(position)
-            # self.get_logger().info(f"Calibration computed!")
-            self.publish_transform(self.T_world_to_base_link)
-            self.publish_pose(self.T_world_to_base_link)
-            # self.get_logger().info(f"Transofrmation matrix: {self.T_world_to_base_link}")
+        self.get_logger().info("Publishing calibration transform...")
+        self.publish_transform(self.T_world_to_base_link)
 
-            self.get_logger().info("Publishing calibration transform...")
-            self.publish_transform(self.T_world_to_base_link)
-
-        except:
-            self.get_logger().info('-------------------')
-            self.get_logger().info('no info from a gps')
-            self.get_logger().info('-------------------')
+        #except:
+            #self.get_logger().info('-------------------')
+            #self.get_logger().info('no info from a gps')
+            #self.get_logger().info('-------------------')
 
     def tf_callback(self, tf_msg):
         for tf in tf_msg.transforms:
-            if tf.child_frame_id == "EmlidE845" and tf.header.frame_id == "base_link":
+            if tf.child_frame_id == "reachrs_front" and tf.header.frame_id == "base_link":
                 self.Q1 = np.array([[tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z]])
-                self.get_logger().info(f"EmlidE845 transformation acquired: {self.P[0]}")
-            if tf.child_frame_id == "Emlid6802" and tf.header.frame_id == "base_link":
+                self.get_logger().info(f"EmlidE845 transformation acquired: {self.Q1}")
+            if tf.child_frame_id == "reachrs_middle" and tf.header.frame_id == "base_link":
                 self.Q2 = np.array([[tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z]])
-                self.get_logger().info(f"Emlid6802 transformation acquired: {self.P[1]}")
-            if tf.child_frame_id == "EmlidC959" and tf.header.frame_id == "base_link":
+                self.get_logger().info(f"Emlid6802 transformation acquired: {self.Q2}")
+            if tf.child_frame_id == "reachrs_back" and tf.header.frame_id == "base_link":
                 self.Q3 = np.array([[tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z]])
-                self.get_logger().info(f"EmlidC959 transformation acquired: {self.P[2]}")
+                self.get_logger().info(f"EmlidC959 transformation acquired: {self.Q3}")
         if self.Q1 is not None and self.Q2 is not None and self.Q3 is not None:
             self.tf_acquired = True
             self.destroy_subscription(self.tf_sub)
@@ -128,7 +132,8 @@ class Gps_compute(Node):
         while self.tf_acquired == False:
             self.get_logger().info("Waiting for tf transform...")
             time.sleep(0.5)
-        Q = np.array([self.Q1, self.Q2, self.Q3]).T
+        Q = np.array([self.Q1[0], self.Q2[0], self.Q3[0]]).T
+        self.get_logger().info(f"{Q}")
         Q = np.vstack((Q, np.ones((1, Q.shape[1]))))  
         
         #Q = np.array([[2.980048, -0.249529, -0.680838], [3.753882, -0.211299, -0.584590], [3.611486,  0.286080, -0.561145], [1,1,1]]) #Q est une matrice qui provient de valeur mesure au lab 
